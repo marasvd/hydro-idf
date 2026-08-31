@@ -13,9 +13,7 @@ from .utils import procesar_csvs_ideam, generar_png_idf
 DATA_DIR = settings.DATA_DIR
 IDEAM_CSV = DATA_DIR / 'ideam' / 'estaciones.csv'
 PROD_A_DIR = DATA_DIR / 'resultados' / 'producto_a'
-PROD_C_DIR = DATA_DIR / 'resultados' / 'producto_c'
 RESUMEN_A = PROD_A_DIR / 'tabla_M_estaciones.csv'
-RESUMEN_C = PROD_C_DIR / 'resumen_producto_c.csv'
 
 
 def _cargar_estaciones():
@@ -35,7 +33,6 @@ def estaciones(request):
     df = _cargar_estaciones()
 
     archivos_a = set(os.listdir(PROD_A_DIR)) if PROD_A_DIR.exists() else set()
-    archivos_c = set(os.listdir(PROD_C_DIR)) if PROD_C_DIR.exists() else set()
 
     resultado = []
     for _, row in df.iterrows():
@@ -48,7 +45,7 @@ def estaciones(request):
             'longitud': float(row['longitud']),
             'municipio': row['municipio'],
             'tiene_producto_a': f'IDF_{carpeta}.csv' in archivos_a,
-            'tiene_producto_c': f'IDF_ERA5_{carpeta}.csv' in archivos_c,
+
         })
 
     return Response(resultado)
@@ -108,47 +105,11 @@ def idf_estacion(request, carpeta):
             'datos': datos_a,
         }
 
-    # Producto C
-    producto_c = None
-    ruta_c = PROD_C_DIR / f'IDF_ERA5_{carpeta}.csv'
-    if ruta_c.exists():
-        df_c = pd.read_csv(ruta_c)
 
-        dist_km = None
-        n_anios = None
-        if RESUMEN_C.exists():
-            df_res_c = pd.read_csv(RESUMEN_C)
-            fila_res_c = df_res_c[df_res_c['carpeta'] == carpeta]
-            if not fila_res_c.empty:
-                dist_km = float(fila_res_c['dist_km'].iloc[0])
-                n_anios = int(fila_res_c['n_anios'].iloc[0])
-
-        datos_c = []
-        for _, r in df_c.iterrows():
-            datos_c.append({
-                'duracion_min': int(r['Duracion_min']),
-                'Tr2': round(float(r['Tr2']), 4),
-                'Tr5': round(float(r['Tr5']), 4),
-                'Tr10': round(float(r['Tr10']), 4),
-                'Tr20': round(float(r['Tr20']), 4),
-                'Tr50': round(float(r['Tr50']), 4),
-                'Tr100': round(float(r['Tr100']), 4),
-            })
-
-        producto_c = {
-            'dist_era5_km': dist_km,
-            'n_anios': n_anios,
-            'datos': datos_c,
-            'advertencia_sesgo': (
-                'ERA5 subestima precipitaciones máximas en zonas montañosas. '
-                'Ratio ERA5/INVIAS ≈ 0.249. Use con criterio profesional.'
-            ),
-        }
 
     return Response({
         'estacion': estacion_info,
         'producto_a': producto_a,
-        'producto_c': producto_c,
     })
 
 
@@ -171,16 +132,7 @@ def resumen(request):
                 'i_T100_t10': round(float(r['i_T100_t10']), 2),
             }
 
-    resumen_c = {}
-    if RESUMEN_C.exists():
-        df_c = pd.read_csv(RESUMEN_C)
-        for _, r in df_c.iterrows():
-            resumen_c[r['carpeta']] = {
-                'dist_km': round(float(r['dist_km']), 2),
-                'n_anios': int(r['n_anios']),
-                'i_T10_60min': round(float(r['i_T10_60min']), 4),
-                'i_T100_60min': round(float(r['i_T100_60min']), 4),
-            }
+ 
 
     resultado = []
     for _, row in df_est.iterrows():
@@ -193,7 +145,6 @@ def resumen(request):
             'latitud': float(row['latitud']),
             'longitud': float(row['longitud']),
             'producto_a': resumen_a.get(carpeta),
-            'producto_c': resumen_c.get(carpeta),
         })
 
     return Response(resultado)
@@ -276,11 +227,6 @@ def png_producto(request, tipo, carpeta):
     """
     if tipo == 'a':
         ruta = PROD_A_DIR / f'IDF_{carpeta}.png'
-    elif tipo == 'c':
-        ruta = PROD_C_DIR / f'IDF_ERA5_{carpeta}.png'
-    else:
-        return Response({'error': 'tipo debe ser "a" o "c".'}, status=status.HTTP_400_BAD_REQUEST)
-
     if not ruta.exists():
         return Response({'error': 'Archivo PNG no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -296,12 +242,6 @@ def imagen_producto(request, producto, carpeta):
     if producto == 'a':
         ruta = PROD_A_DIR / f'IDF_{carpeta}.png'
         filename = f'IDF_{carpeta}.png'
-    elif producto == 'c':
-        ruta = PROD_C_DIR / f'IDF_ERA5_{carpeta}.png'
-        filename = f'IDF_ERA5_{carpeta}.png'
-    else:
-        return HttpResponse('producto debe ser "a" o "c".', status=400)
-
     if not ruta.exists():
         return HttpResponse(f'PNG no encontrado: {ruta}', status=404)
 
