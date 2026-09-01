@@ -9,7 +9,6 @@ let MAP = null;
 let STATIONS = [];
 let MARKERS = {};
 let CURRENT_DATA = null;
-let CURRENT_LAYER = 'ambas';
 let SELECTED_MARKER = null;
 let REPORTES_LOADED = false;
 let ESTACIONES_LOADED = false;
@@ -70,10 +69,9 @@ function initMap() {
 }
 
 // ── Station markers ──────────────────────────────────────
-function makeIcon(hasA, hasC, selected) {
+function makeIcon(hasA, selected) {
   let cls = 'station-marker';
-  if (!hasA && !hasC) cls += ' dim-mk';
-  else if (!hasA && hasC) cls += ' amber-mk';
+  if (!hasA) cls += ' dim-mk';
   if (selected) cls += ' selected';
 
   return L.divIcon({
@@ -96,7 +94,7 @@ function loadStations() {
       data.forEach(station => {
         const marker = L.marker(
           [station.latitud, station.longitud],
-          { icon: makeIcon(station.tiene_producto_a, station.tiene_producto_c, false) }
+          { icon: makeIcon(station.tiene_producto_a, false) }
         );
 
         marker.bindTooltip(
@@ -123,19 +121,14 @@ function openPanel(carpeta, markerRef) {
   if (SELECTED_MARKER) {
     const prev = MARKERS[SELECTED_MARKER];
     if (prev) {
-      prev.marker.setIcon(makeIcon(prev.data.tiene_producto_a, prev.data.tiene_producto_c, false));
+      prev.marker.setIcon(makeIcon(prev.data.tiene_producto_a, false));
     }
   }
   SELECTED_MARKER = carpeta;
   const cur = MARKERS[carpeta];
   if (cur) {
-    cur.marker.setIcon(makeIcon(cur.data.tiene_producto_a, cur.data.tiene_producto_c, true));
+    cur.marker.setIcon(makeIcon(cur.data.tiene_producto_a, true));
   }
-
-  CURRENT_LAYER = 'ambas';
-  document.querySelectorAll('#layer-toggles .toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.layer === 'ambas');
-  });
 
   const panel = document.getElementById('station-panel');
   document.getElementById('panel-name').textContent = 'Cargando…';
@@ -144,7 +137,6 @@ function openPanel(carpeta, markerRef) {
   document.getElementById('idf-chart').innerHTML =
     '<div style="height:260px;display:flex;align-items:center;justify-content:center;color:#4a5568;font-size:12px">Cargando datos…</div>';
   document.getElementById('intensity-table').innerHTML = '';
-  document.getElementById('era5-bias').classList.add('hidden');
   panel.classList.add('open');
 
   fetch(`/api/idf/${encodeURIComponent(carpeta)}/`)
@@ -168,7 +160,7 @@ function closePanel() {
   if (SELECTED_MARKER) {
     const prev = MARKERS[SELECTED_MARKER];
     if (prev) {
-      prev.marker.setIcon(makeIcon(prev.data.tiene_producto_a, prev.data.tiene_producto_c, false));
+      prev.marker.setIcon(makeIcon(prev.data.tiene_producto_a, false));
     }
     SELECTED_MARKER = null;
   }
@@ -176,7 +168,7 @@ function closePanel() {
 }
 
 function populatePanel(data) {
-  const { estacion, producto_a, producto_c } = data;
+  const { estacion, producto_a } = data;
 
   document.getElementById('panel-name').textContent = cleanName(estacion.nombre_ideam);
   document.getElementById('panel-meta').textContent =
@@ -191,58 +183,31 @@ function populatePanel(data) {
         INVIAS · M=${producto_a.M_mm} mm · ${producto_a.anos_validos ?? '—'} años
       </span>`;
   }
-  if (producto_c) {
-    chipsEl.innerHTML += `
-      <span class="chip amber">
-        <span class="chip-dot"></span>
-        ERA5 · dist=${producto_c.dist_era5_km ?? '—'} km · ${producto_c.n_anios ?? '—'} años
-      </span>`;
-  }
 
-  renderIDFChart('idf-chart', producto_a, producto_c, CURRENT_LAYER, 260);
-  renderIntensityTable(producto_a, producto_c);
-
-  if (producto_c) {
-    document.getElementById('era5-bias').classList.remove('hidden');
-  }
+  renderIDFChart('idf-chart', producto_a, 260);
+  renderIntensityTable(producto_a);
 }
 
-function renderIntensityTable(productoA, productoC) {
+function renderIntensityTable(productoA) {
   const el = document.getElementById('intensity-table');
-  if (!productoA && !productoC) { el.innerHTML = ''; return; }
+  if (!productoA) { el.innerHTML = ''; return; }
 
   const DURATIONS = [10, 30, 60, 120, 180];
 
   const getA = (dur, key) => {
-    if (!productoA) return null;
     const row = productoA.datos.find(d => d.duracion_min === dur);
     return row ? row[key] : null;
   };
-  const getC = (dur, key) => {
-    if (!productoC) return null;
-    const row = productoC.datos.find(d => d.duracion_min === dur);
-    return row ? row[key] : null;
-  };
 
-  let headerCols = '<th>t (min)</th>';
-  if (productoA) headerCols += '<th>INVIAS T10</th><th>INVIAS T100</th>';
-  if (productoC) headerCols += '<th>ERA5 Tr10</th><th>ERA5 Tr100</th>';
+  let headerCols = '<th>t (min)</th><th>INVIAS T10</th><th>INVIAS T100</th>';
 
   let rows = '';
   DURATIONS.forEach(dur => {
+    const t10 = getA(dur, 'T10');
+    const t100 = getA(dur, 'T100');
     let cols = `<td>${dur}</td>`;
-    if (productoA) {
-      const t10 = getA(dur, 'T10');
-      const t100 = getA(dur, 'T100');
-      cols += t10 !== null ? `<td class="teal-val">${t10.toFixed(1)}</td>` : '<td>—</td>';
-      cols += t100 !== null ? `<td class="teal-val">${t100.toFixed(1)}</td>` : '<td>—</td>';
-    }
-    if (productoC) {
-      const tr10 = getC(dur, 'Tr10');
-      const tr100 = getC(dur, 'Tr100');
-      cols += tr10 !== null ? `<td class="amber-val">${tr10.toFixed(2)}</td>` : '<td>—</td>';
-      cols += tr100 !== null ? `<td class="amber-val">${tr100.toFixed(2)}</td>` : '<td>—</td>';
-    }
+    cols += t10 !== null ? `<td class="teal-val">${t10.toFixed(1)}</td>` : '<td>—</td>';
+    cols += t100 !== null ? `<td class="teal-val">${t100.toFixed(1)}</td>` : '<td>—</td>';
     rows += `<tr>${cols}</tr>`;
   });
 
@@ -251,17 +216,6 @@ function renderIntensityTable(productoA, productoC) {
       <thead><tr>${headerCols}</tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
-}
-
-// ── Layer toggle ─────────────────────────────────────────
-function setLayer(layer) {
-  CURRENT_LAYER = layer;
-  document.querySelectorAll('#layer-toggles .toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.layer === layer);
-  });
-  if (CURRENT_DATA) {
-    renderIDFChart('idf-chart', CURRENT_DATA.producto_a, CURRENT_DATA.producto_c, CURRENT_LAYER, 260);
-  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -278,50 +232,31 @@ function _triggerDownload(href, filename) {
 
 function downloadStationPNG() {
   if (!CURRENT_DATA) return;
-  const { estacion, producto_a, producto_c } = CURRENT_DATA;
+  const { estacion, producto_a } = CURRENT_DATA;
   const slug = encodeURIComponent(estacion.carpeta);
   const nombre = estacion.carpeta.replace(/\s+/g, '_');
 
-  const bajarA = (CURRENT_LAYER === 'invias' || CURRENT_LAYER === 'ambas') && producto_a;
-  const bajarC = (CURRENT_LAYER === 'era5' || CURRENT_LAYER === 'ambas') && producto_c;
-
-  if (bajarA) _triggerDownload(`/api/imagen/a/${slug}/`, `IDF_${nombre}.png`);
-  if (bajarC) setTimeout(() => _triggerDownload(`/api/imagen/c/${slug}/`, `IDF_ERA5_${nombre}.png`), 300);
+  if (producto_a) _triggerDownload(`/api/imagen/${slug}/`, `IDF_${nombre}.png`);
 }
 
 function downloadStationCSV() {
   if (!CURRENT_DATA) return;
-  const { estacion, producto_a, producto_c } = CURRENT_DATA;
+  const { estacion, producto_a } = CURRENT_DATA;
 
-  const incluirA = (CURRENT_LAYER === 'invias' || CURRENT_LAYER === 'ambas') && producto_a;
-  const incluirC = (CURRENT_LAYER === 'era5' || CURRENT_LAYER === 'ambas') && producto_c;
+  if (!producto_a) return;
 
   const lines = [];
-  lines.push('# Curvas IDF — HYDRO-IDF HUILA');
+  lines.push('# Curvas IDF — HYDRO-IDF');
   lines.push(`# Estacion: ${cleanName(estacion.nombre_ideam)}`);
   lines.push(`# Municipio: ${estacion.municipio}`);
   lines.push(`# Codigo: ${estacion.codigo}`);
   lines.push('');
-
-  if (incluirA) {
-    lines.push('## Producto A — INVIAS Ec. 2.103 Region Andina R1');
-    lines.push(`# M_mm: ${producto_a.M_mm}  Anos_validos: ${producto_a.anos_validos}`);
-    lines.push('Duracion_min,T2,T5,T10,T20,T50,T100');
-    producto_a.datos.forEach(r => {
-      lines.push(`${r.duracion_min},${r.T2},${r.T5},${r.T10},${r.T20},${r.T50},${r.T100}`);
-    });
-    lines.push('');
-  }
-
-  if (incluirC) {
-    lines.push('## Producto C — ERA5 Gumbel L-Momentos');
-    lines.push(`# Dist_ERA5_km: ${producto_c.dist_era5_km}  N_anios: ${producto_c.n_anios}`);
-    lines.push('# ADVERTENCIA: ERA5 subestima precipitaciones maximas en zonas montanosas. Ratio ERA5/INVIAS ~0.249');
-    lines.push('Duracion_min,Tr2,Tr5,Tr10,Tr20,Tr50,Tr100');
-    producto_c.datos.forEach(r => {
-      lines.push(`${r.duracion_min},${r.Tr2},${r.Tr5},${r.Tr10},${r.Tr20},${r.Tr50},${r.Tr100}`);
-    });
-  }
+  lines.push('## INVIAS Ec. 2.103');
+  lines.push(`# M_mm: ${producto_a.M_mm}  Anos_validos: ${producto_a.anos_validos}`);
+  lines.push('Duracion_min,T2,T5,T10,T20,T50,T100');
+  producto_a.datos.forEach(r => {
+    lines.push(`${r.duracion_min},${r.T2},${r.T5},${r.T10},${r.T20},${r.T50},${r.T100}`);
+  });
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -362,11 +297,6 @@ function buildEstacionesTable(data) {
         <td class="text-center">
           ${s.tiene_producto_a
         ? '<span class="badge-yes teal">✓ INVIAS</span>'
-        : '<span class="badge-no">—</span>'}
-        </td>
-        <td class="text-center">
-          ${s.tiene_producto_c
-        ? '<span class="badge-yes amber">✓ ERA5</span>'
         : '<span class="badge-no">—</span>'}
         </td>
         <td>
@@ -416,9 +346,8 @@ function loadReportes() {
     .then(r => r.json())
     .then(data => {
       if (loadingEl) loadingEl.classList.add('hidden');
-      renderComparisonChart('report-comparison', data);
       renderMDistChart('report-m-dist', data);
-      renderRatioChart('report-ratio', data);
+      renderComparisonChart('report-comparison', data);
     })
     .catch(err => {
       if (loadingEl) {
@@ -442,11 +371,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
 
   document.getElementById('panel-close')?.addEventListener('click', closePanel);
-
-  document.getElementById('layer-toggles')?.addEventListener('click', e => {
-    const btn = e.target.closest('.toggle-btn');
-    if (btn) setLayer(btn.dataset.layer);
-  });
 
   document.getElementById('btn-download')?.addEventListener('click', downloadStationCSV);
   document.getElementById('btn-download-png')?.addEventListener('click', downloadStationPNG);
