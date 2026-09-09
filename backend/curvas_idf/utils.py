@@ -12,6 +12,7 @@ import matplotlib
 matplotlib.use('Agg')   # sin GUI — debe ir ANTES de importar pyplot
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from scipy import stats
 
 # ── Parámetros INVIAS por región (Tabla 2.12 Manual de Drenaje INVIAS) ────────
 # Cuando el profesor confirme R5, agregar aquí y eliminar el bloqueo en detectar_region()
@@ -122,21 +123,81 @@ COLORES_T = {
 }
 
 
+def _rosner_esd(data, max_outliers=None, alpha=0.05):
+    """
+    Prueba Generalized ESD (Rosner) para detección de outliers.
+    
+    Parámetros
+    ----------
+    data        : array-like de valores numéricos
+    max_outliers: número máximo de outliers a buscar (default: 10% de n)
+    alpha       : nivel de significancia (default 0.05)
+    
+    Retorna
+    -------
+    lista de valores detectados como outliers
+    """
+    data = np.array(data, dtype=float)
+    n = len(data)
+    if max_outliers is None:
+        max_outliers = max(1, int(np.ceil(n * 0.10)))
+
+    outliers_detectados = []
+    data_trabajo = data.copy()
+    indices_removidos = []
+
+    for i in range(1, max_outliers + 1):
+        if len(data_trabajo) < 3:
+            break
+
+        media = np.mean(data_trabajo)
+        std = np.std(data_trabajo, ddof=1)
+        if std == 0:
+            break
+
+        desviaciones = np.abs(data_trabajo - media)
+        idx_max = np.argmax(desviaciones)
+        R = desviaciones[idx_max] / std
+
+        # Valor crítico lambda_i
+        n_actual = len(data_trabajo)
+        p = 1 - (alpha / (2 * (n_actual - i + 1)))
+        t_crit = stats.t.ppf(p, df=n_actual - i - 1)
+        lambda_crit = ((n_actual - i) * t_crit) / (
+            np.sqrt((n_actual - i - 1 + t_crit**2) * (n_actual - i + 1))
+        )
+
+        if R > lambda_crit:
+            outliers_detectados.append(float(data_trabajo[idx_max]))
+            indices_removidos.append(idx_max)
+            data_trabajo = np.delete(data_trabajo, idx_max)
+        else:
+            break
+
+    return outliers_detectados
+
+
 def calcular_M(df):
     """
     Calcula M = promedio multianual de máximos anuales válidos.
 
-    Criterio OMM: descarta años con más del 10 % de días faltantes (>36 días/año).
+    Flujo:
+      1. Criterio OMM: descarta años con más del 10% de días faltantes (>36 días/año)
+      2. Verifica mínimo 20 años válidos
+      3. Aplica prueba Generalized ESD (Rosner) al 5% sobre los máximos válidos
+      4. Si outliers > 5% de años válidos → advertencia (no bloquea)
+      5. Calcula M sobre la serie completa (incluyendo outliers)
 
     Parámetros
     ----------
-    df : DataFrame con columnas estándar IDEAM:
-         CodigoEstacion, NombreEstacion, Variable, Parametro, Fecha, Unidad, Valor, NivelAprobacion
+    df : DataFrame con columnas estándar IDEAM
 
     Retorna
     -------
-    M_mm      : float — precipitación máxima media multianual (mm)
-    n_validos : int   — número de años válidos usados
+    M_mm        : float — precipitación máxima media multianual (mm)
+    n_validos   : int   — número de años válidos tras criterio OMM
+    outliers    : list  — valores detectados como atípicos (puede estar vacía)
+    advertencia_rosner : str|None — mensaje si outliers > 5%, None si no
     """
     df = df.copy()
     fechas = pd.to_datetime(df['Fecha'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
@@ -148,7 +209,9 @@ def calcular_M(df):
     df = df.dropna(subset=['Valor'])
     df['anio'] = df['Fecha'].dt.year
 
+    # ── 1. Criterio OMM ───────────────────────────────────────────────────────
     maximos = []
+    anios_validos = []
     for anio, grupo in df.groupby('anio'):
         dias_con_dato = grupo['Fecha'].dt.date.nunique()
         dias_en_anio = 366 if (anio % 4 == 0 and (anio % 100 != 0 or anio % 400 == 0)) else 365
@@ -156,15 +219,43 @@ def calcular_M(df):
         if dias_faltantes / dias_en_anio > 0.10:
             continue
         maximos.append(grupo['Valor'].max())
+        anios_validos.append(anio)
 
-    if len(maximos) < 10:
+    # ── 2. Mínimo 20 años ─────────────────────────────────────────────────────
+    if len(maximos) < 20:
         raise ValueError(
-            f"Serie insuficiente: menos de 10 años válidos tras criterio OMM "
-            f"({len(maximos)} año(s) válido(s) encontrado(s))."
+            f"Serie insuficiente: se requieren mínimo 20 años válidos tras criterio OMM. "
+            f"Se encontraron {len(maximos)} año(s) válido(s)."
         )
 
-    return float(np.mean(maximos)), len(maximos)
+    # ── 3. Prueba Rosner/ESD al 5% ────────────────────────────────────────────
+    outliers = _rosner_esd(maximos, alpha=0.05)
 
+    # ── 4. Evaluar porcentaje de outliers ────────────────────────────────────
+    pct_outliers = (len(outliers) / len(maximos)) * 100
+    advertencia_rosner = None
+
+    if len(outliers) > 0:
+        valores_str = ', '.join([f'{v:.1f} mm' for v in sorted(outliers, reverse=True)])
+        if pct_outliers > 5:
+            advertencia_rosner = (
+                f"ADVERTENCIA: Se detectaron {len(outliers)} valor(es) atípico(s) "
+                f"({pct_outliers:.1f}% de los {len(maximos)} años válidos), "
+                f"superando el umbral del 5%. "
+                f"Valores: {valores_str}. "
+                f"Se recomienda revisar la serie antes de continuar. "
+                f"El cálculo se realizó incluyendo estos valores."
+            )
+        else:
+            advertencia_rosner = (
+                f"NOTA: Se detectaron {len(outliers)} valor(es) atípico(s) "
+                f"({pct_outliers:.1f}% de los {len(maximos)} años válidos), "
+                f"dentro del umbral aceptable del 5%. "
+                f"Valores: {valores_str}."
+            )
+
+    # ── 5. M se calcula sobre la serie completa (con outliers) ───────────────
+    return float(np.mean(maximos)), len(maximos), outliers, advertencia_rosner
 
 def intensidad(T, t_min, M_mm, params):
     """
@@ -280,7 +371,7 @@ def procesar_csvs_ideam(archivos):
     params = REGIONES_INVIAS[region]
     nombre_region = params['nombre']
 
-    M_mm, anos_validos = calcular_M(combinado)
+    M_mm, anos_validos, outliers, advertencia_rosner = calcular_M(combinado)
     datos = calcular_idf(M_mm, params)
 
     return {
@@ -288,60 +379,8 @@ def procesar_csvs_ideam(archivos):
         'n_archivos': len(archivos),
         'M_mm': round(M_mm, 2),
         'anos_validos': anos_validos,
-        'region': region,
-        'nombre_region': nombre_region,
-        'datos': datos,
-        'advertencia': (
-            f'Resultado calculado con método INVIAS Ec. 2.103, '
-            f'parámetros {region} ({nombre_region}). '
-            f'a={params["a"]}, b={params["b"]}, c={params["c"]}, d={params["d"]}.'
-        ),
-    }
-
-
-def procesar_csv_ideam(archivo):
-    """
-    Procesa un archivo CSV IDEAM y retorna las curvas IDF calculadas.
-
-    Parámetros
-    ----------
-    archivo : objeto similar a file (Django InMemoryUploadedFile o ruta)
-
-    Retorna
-    -------
-    dict con claves: estacion, M_mm, anos_validos, region, nombre_region,
-                     datos, advertencia
-    """
-    try:
-        df = pd.read_csv(archivo, sep=',', encoding='utf-8', low_memory=False)
-    except UnicodeDecodeError:
-        archivo.seek(0)
-        df = pd.read_csv(archivo, sep=',', encoding='latin-1', low_memory=False)
-
-    df.columns = df.columns.str.strip()
-
-    columnas_requeridas = {'CodigoEstacion', 'NombreEstacion', 'Fecha', 'Valor'}
-    if not columnas_requeridas.issubset(set(df.columns)):
-        raise ValueError(
-            f"El CSV no tiene las columnas esperadas. "
-            f"Se requieren: {columnas_requeridas}. "
-            f"Se encontraron: {set(df.columns)}"
-        )
-
-    codigo = str(df['CodigoEstacion'].iloc[0]).strip()
-    nombre = str(df['NombreEstacion'].iloc[0]).strip()
-
-    region = detectar_region(codigo)   # lanza ValueError si es R5
-    params = REGIONES_INVIAS[region]
-    nombre_region = params['nombre']
-
-    M_mm, anos_validos = calcular_M(df)
-    datos = calcular_idf(M_mm, params)
-
-    return {
-        'estacion': {'codigo': codigo, 'nombre': nombre},
-        'M_mm': round(M_mm, 2),
-        'anos_validos': anos_validos,
+        'outliers_rosner': outliers,
+        'advertencia_rosner': advertencia_rosner,
         'region': region,
         'nombre_region': nombre_region,
         'datos': datos,
