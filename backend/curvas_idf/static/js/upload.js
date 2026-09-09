@@ -204,6 +204,21 @@ function showCalcResult(data) {
     ? 'Cálculo individual'
     : `${nArchivos} archivos combinados`;
 
+  // ── Badge Rosner (variable auxiliar para evitar backticks anidados) ──
+  const rosnerBadge = data.advertencia_rosner ? (() => {
+    const esAdvertencia = data.advertencia_rosner.startsWith('ADVERTENCIA');
+    const color = esAdvertencia ? '#f87171' : '#60a5fa';
+    return `<div class="bias-badge" style="margin-bottom:8px; border-color:${color}">
+      <svg viewBox="0 0 24 24" fill="none" class="bias-icon"
+           stroke="${color}" stroke-width="2" stroke-linecap="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>${data.advertencia_rosner}</span>
+    </div>`;
+  })() : '';
+
   document.getElementById('calc-station-header').innerHTML = `
     <div class="result-station-name">${data.estacion.nombre}</div>
     <div class="result-chips">
@@ -215,15 +230,15 @@ function showCalcResult(data) {
     ${data.advertencia
       ? `<div class="bias-badge" style="margin-bottom:8px">
           <svg viewBox="0 0 24 24" fill="none" class="bias-icon" stroke="#ffb300"
-                stroke-width="2" stroke-linecap="round">
+               stroke-width="2" stroke-linecap="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9"  x2="12"    y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-            <span>${data.advertencia}</span>
+          <span>${data.advertencia}</span>
         </div>`
-      : ''}`;
-
+      : ''}
+    ${rosnerBadge}`;
   // Actualizar tarjeta de parámetros con la región detectada
   const PARAMS = {
     R1: { nombre: 'Andina R1', a: 0.94, b: 0.18, c: 0.66, d: 0.83 },
@@ -233,7 +248,7 @@ function showCalcResult(data) {
   };
   const region = data.region || 'R1';
   const p = PARAMS[region] || PARAMS['R1'];
-  document.getElementById('param-card-title').textContent = `Parámetros INVIAS ${region}`;
+  document.getElementById('param-card-title').textContent = `Parámetros INVIAS ${region} `;
   document.getElementById('param-region').textContent = p.nombre;
   document.getElementById('param-a').textContent = p.a;
   document.getElementById('param-b').textContent = p.b;
@@ -243,7 +258,7 @@ function showCalcResult(data) {
 
   const headers = '<th>t (min)</th><th>T2</th><th>T5</th><th>T10</th><th>T20</th><th>T50</th><th>T100</th>';
   const rows = data.datos.map(r => `
-    <tr>
+    < tr >
       <td>${r.duracion_min}</td>
       <td>${r.T2.toFixed(1)}</td>
       <td>${r.T5.toFixed(1)}</td>
@@ -251,9 +266,9 @@ function showCalcResult(data) {
       <td>${r.T20.toFixed(1)}</td>
       <td>${r.T50.toFixed(1)}</td>
       <td class="teal-val">${r.T100.toFixed(1)}</td>
-    </tr>`).join('');
+    </tr > `).join('');
   document.getElementById('calc-table').innerHTML =
-    `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+    `< table ><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table > `;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -264,15 +279,15 @@ function downloadCalcCSV() {
   const { estacion, M_mm, anos_validos, datos } = calcResult;
   const lines = [
     '# Curvas IDF — HYDRO-IDF HUILA',
-    `# Estacion: ${estacion.nombre}`,
-    `# Codigo: ${estacion.codigo}`,
+    `# Estacion: ${estacion.nombre} `,
+    `# Codigo: ${estacion.codigo} `,
     `# Metodo: INVIAS Ec. 2.103 | ${calcResult.region || 'R1'} (${calcResult.nombre_region || 'Andina'})`,
-    `# M_mm: ${M_mm}  Anos_validos: ${anos_validos}`,
+    `# M_mm: ${M_mm} Anos_validos: ${anos_validos} `,
     '',
     'Duracion_min,T2,T5,T10,T20,T50,T100',
   ];
   datos.forEach(r => {
-    lines.push(`${r.duracion_min},${r.T2},${r.T5},${r.T10},${r.T20},${r.T50},${r.T100}`);
+    lines.push(`${r.duracion_min},${r.T2},${r.T5},${r.T10},${r.T20},${r.T50},${r.T100} `);
   });
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
