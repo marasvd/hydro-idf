@@ -1,6 +1,13 @@
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
+
+CARTO_API_KEY = os.environ.get('CARTO_API_KEY', '')
 
 SECRET_KEY = 'django-insecure-curvas-idf-huila-local-dev-key-2024'
 
@@ -62,3 +69,5 @@ REST_FRAMEWORK = {
 
 # Ruta base a los datos estáticos del proyecto
 DATA_DIR = BASE_DIR.parent / 'data'
+
+
