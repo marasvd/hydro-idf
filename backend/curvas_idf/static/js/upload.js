@@ -258,7 +258,7 @@ function showCalcResult(data) {
 
   const headers = '<th>t (min)</th><th>T2</th><th>T5</th><th>T10</th><th>T20</th><th>T50</th><th>T100</th>';
   const rows = data.datos.map(r => `
-    < tr >
+    <tr>
       <td>${r.duracion_min}</td>
       <td>${r.T2.toFixed(1)}</td>
       <td>${r.T5.toFixed(1)}</td>
@@ -266,9 +266,9 @@ function showCalcResult(data) {
       <td>${r.T20.toFixed(1)}</td>
       <td>${r.T50.toFixed(1)}</td>
       <td class="teal-val">${r.T100.toFixed(1)}</td>
-    </tr > `).join('');
+    </tr>`).join('');
   document.getElementById('calc-table').innerHTML =
-    `< table ><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table > `;
+    `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // ══════════════════════════════════════════════════════════
