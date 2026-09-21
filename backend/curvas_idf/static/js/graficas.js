@@ -118,7 +118,8 @@ function renderCalcChart(containerId, datos, estacionNombre) {
 
   const traces = buildTracesInvias(datos);
   const layout = Object.assign({}, PLOTLY_BASE_LAYOUT, {
-    height: 300,
+    height: 340,
+    margin: { t: 50, r: 20, b: 40, l: 50 },
     title: {
       text: `IDF — ${estacionNombre}`,
       font: { size: 12, color: '#94a3b8' },
