@@ -22,8 +22,8 @@ function accumulateFiles(incoming) {
   }
 
   // Deduplicate by filename against the existing queue
-  const existingNames = new Set(selectedFiles.map(f => f.name));
-  const newFiles = csvFiles.filter(f => !existingNames.has(f.name));
+  const existingKeys = new Set(selectedFiles.map(f => `${f.name}__${f.size}__${f.lastModified}`));
+  const newFiles = csvFiles.filter(f => !existingKeys.has(`${f.name}__${f.size}__${f.lastModified}`));
   const dupeCount = csvFiles.length - newFiles.length;
 
   // Build feedback message
@@ -301,6 +301,20 @@ function downloadCalcCSV() {
   URL.revokeObjectURL(url);
 }
 
+// ojala este si sirvaa
+function downloadCalcPNG() {
+  if (!calcResult) return;
+  const el = document.getElementById('calc-chart');
+  if (!el) return;
+
+  Plotly.downloadImage(el, {
+    format: 'png',
+    width: 1200,
+    height: 700,
+    filename: `IDF_${calcResult.estacion.codigo}`,
+  });
+}
+
 // ══════════════════════════════════════════════════════════
 // ERROR HANDLING
 // ══════════════════════════════════════════════════════════
@@ -319,4 +333,5 @@ function hideCalcError() {
 document.addEventListener('DOMContentLoaded', () => {
   initDropZone();
   document.getElementById('btn-download-calc')?.addEventListener('click', downloadCalcCSV);
+  document.getElementById('btn-download-calc-png')?.addEventListener('click', downloadCalcPNG);// es lo de descarga png, ojala sirva
 });
