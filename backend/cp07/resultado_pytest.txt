@@ -1,0 +1,130 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.1.1, pluggy-1.7.0 -- C:\Users\maria\OneDrive\Escritorio\CURVAS-IDF-ACTUALIZADA\hydro-idf\backend\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\maria\OneDrive\Escritorio\CURVAS-IDF-ACTUALIZADA\hydro-idf\backend
+collecting ... collected 8 items
+
+cp07/test_cp07_parametro_M.py::test_00_referencia_manual_es_consistente PASSED [ 12%]
+cp07/test_cp07_parametro_M.py::test_01_calcular_M_mesetas PASSED         [ 25%]
+cp07/test_cp07_parametro_M.py::test_02_M_no_es_maximo_absoluto_ni_incluye_2001 PASSED [ 37%]
+cp07/test_cp07_parametro_M.py::test_03_intensidades_contra_tabla_manual PASSED [ 50%]
+cp07/test_cp07_parametro_M.py::test_04_calcular_idf_tabla_completa PASSED [ 62%]
+cp07/test_cp07_parametro_M.py::test_05_H06_fechas_mixtas_no_alteran_M FAILED [ 75%]
+cp07/test_cp07_parametro_M.py::test_06_H07_estacion_fuera_de_catalogo_no_cae_en_R1_en_silencio FAILED [ 87%]
+cp07/test_cp07_parametro_M.py::test_07_region_mesetas_es_R4 PASSED       [100%]
+
+================================== FAILURES ===================================
+___________________ test_05_H06_fechas_mixtas_no_alteran_M ____________________
+
+    def test_05_H06_fechas_mixtas_no_alteran_M():
+>       M, _ = extraer_M(utils.calcular_M(generar(mixto=True)))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+cp07\test_cp07_parametro_M.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+df =    CodigoEstacion NombreEstacion      Fecha  Valor  anio
+0        32075050        MESETAS 1983-01-01    0.0  1983
+
+    def calcular_M(df):
+        """
+        Calcula M = promedio multianual de mßximos anuales vßlidos.
+    
+        Flujo:
+          1. Criterio OMM: descarta a±os con mßs del 10% de dÝas faltantes (>36 dÝas/a±o)
+          2. Verifica mÝnimo 20 a±os vßlidos
+          3. Aplica prueba Generalized ESD (Rosner) al 5% sobre los mßximos vßlidos
+          4. Si outliers > 5% de a\xf1os v\xe1lidos \u2192 advertencia (no bloquea)
+          5. Calcula M sobre la serie completa (incluyendo outliers)
+    
+        Parßmetros
+        ----------
+        df : DataFrame con columnas estßndar IDEAM
+    
+        Retorna
+        -------
+        M_mm        : float ù precipitaci¾n mßxima media multianual (mm)
+        n_validos   : int   ù n·mero de a±os vßlidos tras criterio OMM
+        outliers    : list  ù valores detectados como atÝpicos (puede estar vacÝa)
+        advertencia_rosner : str|None ù mensaje si outliers > 5%, None si no
+        """
+        df = df.copy()
+        fechas = pd.to_datetime(df['Fecha'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+        if fechas.isna().all():
+            fechas = pd.to_datetime(df['Fecha'], errors='coerce')
+        df['Fecha'] = fechas
+        df = df.dropna(subset=['Fecha', 'Valor'])
+        df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
+        df = df.dropna(subset=['Valor'])
+        df['anio'] = df['Fecha'].dt.year
+    
+        # \u2500\u2500 1. Criterio OMM \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        maximos = []
+        anios_validos = []
+        for anio, grupo in df.groupby('anio'):
+            dias_con_dato = grupo['Fecha'].dt.date.nunique()
+            dias_en_anio = 366 if (anio % 4 == 0 and (anio % 100 != 0 or anio % 400 == 0)) else 365
+            dias_faltantes = dias_en_anio - dias_con_dato
+            if dias_faltantes / dias_en_anio > 0.10:
+                continue
+            maximos.append(grupo['Valor'].max())
+            anios_validos.append(anio)
+    
+        # \u2500\u2500 2. M\xednimo 20 a\xf1os \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        if len(maximos) < 20:
+>           raise ValueError(
+                f"Serie insuficiente: se requieren mÝnimo 20 a±os vßlidos tras criterio OMM. "
+                f"Se encontraron {len(maximos)} a±o(s) vßlido(s)."
+            )
+E           ValueError: Serie insuficiente: se requieren mÝnimo 20 a±os vßlidos tras criterio OMM. Se encontraron 0 a±o(s) vßlido(s).
+
+curvas_idf\utils.py:226: ValueError
+_______ test_06_H07_estacion_fuera_de_catalogo_no_cae_en_R1_en_silencio _______
+
+    def test_06_H07_estacion_fuera_de_catalogo_no_cae_en_R1_en_silencio():
+        try:
+            r = utils.detectar_region(99999999)
+        except Exception as e:
+            print(f"\n[Lanza excepci¾n (comportamiento deseado): {e!r}]")
+            return
+        print(f"\n[detectar_region(99999999) devolvi¾: {r!r}]")
+>       assert r not in ("R1", "Andina", 1), "H-07 CONFIRMADO: fallback silencioso a Regi¾n Andina."
+E       AssertionError: H-07 CONFIRMADO: fallback silencioso a Regi¾n Andina.
+E       assert 'R1' not in ('R1', 'Andina', 1)
+
+cp07\test_cp07_parametro_M.py:96: AssertionError
+---------------------------- Captured stdout call -----------------------------
+[INFO] Catßlogo IDEAM cargado: 9685 estaciones.
+[WARN] C¾digo 99999999 no encontrado en catßlogo. Usando R1 por defecto.
+
+[detectar_region(99999999) devolvi¾: 'R1']
+=================================== PASSES ====================================
+_________________________ test_01_calcular_M_mesetas __________________________
+---------------------------- Captured stdout call -----------------------------
+
+[calcular_M devolvi¾: tuple -> (103.54799999999999, 25, [], None)]
+_______________ test_02_M_no_es_maximo_absoluto_ni_incluye_2001 _______________
+---------------------------- Captured stdout call -----------------------------
+
+[calcular_M devolvi¾: tuple -> (103.54799999999999, 25, [], None)]
+_____________________ test_04_calcular_idf_tabla_completa _____________________
+---------------------------- Captured stdout call -----------------------------
+
+[calcular_idf devolvi¾: list]
+   duracion_min      T2      T5     T10     T20     T50    T100
+0            10  135.05  157.82  177.55  199.76  233.43  262.62
+1            20   87.27  101.98  114.73  129.08  150.83  169.70
+2            30   67.59   78.99   88.87   99.98  116.83  131.44
+________________________ test_07_region_mesetas_es_R4 _________________________
+---------------------------- Captured stdout call -----------------------------
+[INFO] Estaci¾n 32075050 -> Meta -> R4 (OrinoquÝa)
+=========================== short test summary info ===========================
+PASSED cp07/test_cp07_parametro_M.py::test_00_referencia_manual_es_consistente
+PASSED cp07/test_cp07_parametro_M.py::test_01_calcular_M_mesetas
+PASSED cp07/test_cp07_parametro_M.py::test_02_M_no_es_maximo_absoluto_ni_incluye_2001
+PASSED cp07/test_cp07_parametro_M.py::test_03_intensidades_contra_tabla_manual
+PASSED cp07/test_cp07_parametro_M.py::test_04_calcular_idf_tabla_completa
+PASSED cp07/test_cp07_parametro_M.py::test_07_region_mesetas_es_R4
+FAILED cp07/test_cp07_parametro_M.py::test_05_H06_fechas_mixtas_no_alteran_M
+FAILED cp07/test_cp07_parametro_M.py::test_06_H07_estacion_fuera_de_catalogo_no_cae_en_R1_en_silencio
+========================= 2 failed, 6 passed in 6.65s =========================
