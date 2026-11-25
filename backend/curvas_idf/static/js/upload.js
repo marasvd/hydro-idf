@@ -4,6 +4,14 @@
 
 'use strict';
 
+const PARAMS = {
+  R1: { nombre: 'Andina R1', a: 0.94, b: 0.18, c: 0.66, d: 0.83 },
+  R2: { nombre: 'Caribe R2', a: 24.85, b: 0.22, c: 0.50, d: 0.10 },
+  R3: { nombre: 'Pacífico R3', a: 13.92, b: 0.19, c: 0.58, d: 0.20 },
+  R4: { nombre: 'Orinoquía R4', a: 5.53, b: 0.17, c: 0.63, d: 0.42 },
+};
+
+
 // ── State ─────────────────────────────────────────────────
 let selectedFiles = [];   // Array<File> — accumulates across drops/selections
 let calcResult = null;
@@ -240,12 +248,7 @@ function showCalcResult(data) {
       : ''}
     ${rosnerBadge}`;
   // Actualizar tarjeta de parámetros con la región detectada
-  const PARAMS = {
-    R1: { nombre: 'Andina R1', a: 0.94, b: 0.18, c: 0.66, d: 0.83 },
-    R2: { nombre: 'Caribe R2', a: 24.85, b: 0.22, c: 0.50, d: 0.10 },
-    R3: { nombre: 'Pacífico R3', a: 13.92, b: 0.19, c: 0.58, d: 0.20 },
-    R4: { nombre: 'Orinoquía R4', a: 5.53, b: 0.17, c: 0.63, d: 0.42 },
-  };
+
   const region = data.region || 'R1';
   const p = PARAMS[region] || PARAMS['R1'];
   document.getElementById('param-card-title').textContent = `Parámetros INVIAS ${region} `;
@@ -253,8 +256,13 @@ function showCalcResult(data) {
   document.getElementById('param-a').textContent = p.a;
   document.getElementById('param-b').textContent = p.b;
   document.getElementById('param-c').textContent = p.c;
-  document.getElementById('param-d').textContent = p.d;
-  renderCalcChart('calc-chart', data.datos, data.estacion.nombre);
+  document.getElementById('param-d').textContent = p.d; document.getElementById('param-M').textContent = `M = ${Number(data.M_mm).toFixed(2)} mm`;
+  renderCalcChart('calc-chart', data.datos, data.estacion.nombre, {
+    M_mm: data.M_mm,
+    region: p.nombre,
+    params: { a: p.a, b: p.b, c: p.c, d: p.d },
+  });
+  window.ultimoResultadoIDF = { data, p, region };
 
   const headers = '<th>t (min)</th><th>T2</th><th>T5</th><th>T10</th><th>T20</th><th>T50</th><th>T100</th>';
   const rows = data.datos.map(r => `
@@ -277,17 +285,19 @@ function showCalcResult(data) {
 function downloadCalcCSV() {
   if (!calcResult) return;
   const { estacion, M_mm, anos_validos, datos } = calcResult;
-  const lines = [
-    '# Curvas IDF — HYDRO-IDF HUILA',
-    `# Estacion: ${estacion.nombre} `,
-    `# Codigo: ${estacion.codigo} `,
-    `# Metodo: INVIAS Ec. 2.103 | ${calcResult.region || 'R1'} (${calcResult.nombre_region || 'Andina'})`,
-    `# M_mm: ${M_mm} Anos_validos: ${anos_validos} `,
-    '',
-    'Duracion_min,T2,T5,T10,T20,T50,T100',
-  ];
+  const region = calcResult.region || 'R1';
+  const p = (typeof PARAMS !== 'undefined' && PARAMS[region]) || null;
+
+  const cab = ['Duracion_min', 'T2', 'T5', 'T10', 'T20', 'T50', 'T100',
+    'M_mm', 'Region', 'Anos_validos'];
+  if (p) cab.push('a', 'b', 'c', 'd');
+
+  const lines = [cab.join(',')];
   datos.forEach(r => {
-    lines.push(`${r.duracion_min},${r.T2},${r.T5},${r.T10},${r.T20},${r.T50},${r.T100} `);
+    const fila = [r.duracion_min, r.T2, r.T5, r.T10, r.T20, r.T50, r.T100,
+      M_mm, region, anos_validos];
+    if (p) fila.push(p.a, p.b, p.c, p.d);
+    lines.push(fila.join(','));
   });
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -335,3 +345,26 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-download-calc')?.addEventListener('click', downloadCalcCSV);
   document.getElementById('btn-download-calc-png')?.addEventListener('click', downloadCalcPNG);// es lo de descarga png, ojala sirva
 });
+function descargarCSV() {
+  const r = window.ultimoResultadoIDF;
+  if (!r) return;
+  const { data, p, region } = r;
+  const cab = ['Duracion_min', 'T2', 'T5', 'T10', 'T20', 'T50', 'T100',
+    'M_mm', 'Region', 'a', 'b', 'c', 'd'];
+  const filas = data.datos.map(f => [
+    f.duracion_min,
+    f.T2.toFixed(2), f.T5.toFixed(2), f.T10.toFixed(2),
+    f.T20.toFixed(2), f.T50.toFixed(2), f.T100.toFixed(2),
+    Number(data.M_mm).toFixed(2), region, p.a, p.b, p.c, p.d,
+  ].join(','));
+  const csv = [cab.join(','), ...filas].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = `IDF_calculado_${data.estacion.codigo}.csv`;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
+}

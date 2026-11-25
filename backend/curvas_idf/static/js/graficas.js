@@ -112,7 +112,27 @@ function renderIDFChart(containerId, productoA, height) {
  * @param {Array} datos - array de {duracion_min, T2, ..., T100}
  * @param {string} estacionNombre
  */
-function renderCalcChart(containerId, datos, estacionNombre) {
+
+function buildFormulaAnnotation(meta) {
+  if (!meta || meta.M_mm == null) return [];
+  const p = meta.params || {};
+  const hayParams = ['a', 'b', 'c', 'd'].every(k => p[k] != null);
+  const lineas = ['<b>i = a·T<sup>b</sup>·M<sup>d</sup> / (t/60)<sup>c</sup></b>'];
+  if (hayParams) {
+    lineas.push(`i = ${p.a}·T<sup>${p.b}</sup>·M<sup>${p.d}</sup> / (t/60)<sup>${p.c}</sup>`);
+  }
+  lineas.push(`M = ${Number(meta.M_mm).toFixed(2)} mm` + (meta.region ? ` · ${meta.region}` : ''));
+  return [{
+    xref: 'paper', yref: 'paper', x: 0.99, y: 0.97,
+    xanchor: 'right', yanchor: 'top', align: 'right', showarrow: false,
+    text: lineas.join('<br>'),
+    font: { size: 10, color: '#94a3b8' },
+    bgcolor: 'rgba(10,14,26,0.7)', bordercolor: '#1e2535', borderwidth: 1, borderpad: 6,
+  }];
+}
+
+
+function renderCalcChart(containerId, datos, estacionNombre, meta) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -125,6 +145,7 @@ function renderCalcChart(containerId, datos, estacionNombre) {
       font: { size: 12, color: '#94a3b8' },
       x: 0.5,
     },
+    annotations: buildFormulaAnnotation(meta),
   });
 
   Plotly.react(el, traces, layout, PLOTLY_CONFIG);
