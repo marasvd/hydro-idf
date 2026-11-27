@@ -13,6 +13,8 @@ matplotlib.use('Agg')   # sin GUI — debe ir ANTES de importar pyplot
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from scipy import stats
+import logging
+logger = logging.getLogger(__name__)
 
 # ── Parámetros INVIAS por región (Tabla 2.12 Manual de Drenaje INVIAS) ────────
 # Cuando el profesor confirme R5, agregar aquí y eliminar el bloqueo en detectar_region()
@@ -61,7 +63,6 @@ def _cargar_catalogo():
     if _catalogo_cache is not None:
         return _catalogo_cache
     if not os.path.exists(_CATALOGO_PATH):
-        print(f"[WARN] Catálogo IDEAM no encontrado en {_CATALOGO_PATH}.")
         _catalogo_cache = {}
         return _catalogo_cache
     df = pd.read_csv(_CATALOGO_PATH, dtype=str, low_memory=False)
@@ -69,7 +70,6 @@ def _cargar_catalogo():
     # Normalizar: quitar ceros a la izquierda para unificar formato 8 y 10 dígitos
     codigos_norm = df['codigo'].str.strip().str.lstrip('0')
     _catalogo_cache = dict(zip(codigos_norm, df['departamento'].str.strip()))
-    print(f"[INFO] Catálogo IDEAM cargado: {len(_catalogo_cache)} estaciones.")
     return _catalogo_cache
 
 
@@ -78,9 +78,9 @@ def detectar_region(codigo_estacion):
     Detecta la región INVIAS a partir del código de estación IDEAM.
 
     Flujo:
-      1. Busca el código en el catálogo -> obtiene departamento
-      2. Mapea departamento -> región INVIAS
-      3. Si no encuentra -> usa R1 como fallback con advertencia en consola
+    1. Busca el código en el catálogo -> obtiene departamento
+    2. Mapea departamento -> región INVIAS
+    3. Si no encuentra -> usa R1 como fallback con advertencia en consola
 
     Lanza ValueError si la región detectada es R5 (parámetros pendientes).
     """
@@ -90,12 +90,14 @@ def detectar_region(codigo_estacion):
 
     departamento = catalogo.get(codigo)
     if not departamento:
-        print(f"[WARN] Código {codigo} no encontrado en catálogo. Usando R1 por defecto.")
-        return 'R1'
+        raise ValueError(
+            f"La estación {codigo_estacion} no está en el catálogo. "
+            f"Este software solo cubre estaciones IDEAM de Colombia."
+        )
 
     region = DEPARTAMENTO_A_REGION.get(departamento)
     if not region:
-        print(f"[WARN] Departamento '{departamento}' sin región asignada. Usando R1 por defecto.")
+        logger.warning("Departamento '%s' sin región asignada. Usando R1 por defecto.", departamento)
         return 'R1'
 
     if region == 'R5':
@@ -105,7 +107,6 @@ def detectar_region(codigo_estacion):
             "con fuente oficial. El cálculo no está disponible aún para esta zona."
         )
 
-    print(f"[INFO] Estación {codigo} -> {departamento} -> {region} ({REGIONES_INVIAS[region]['nombre']})")
     return region
 
 
@@ -200,9 +201,7 @@ def calcular_M(df):
     advertencia_rosner : str|None — mensaje si outliers > 5%, None si no
     """
     df = df.copy()
-    fechas = pd.to_datetime(df['Fecha'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-    if fechas.isna().all():
-        fechas = pd.to_datetime(df['Fecha'], errors='coerce')
+    fechas = pd.to_datetime(df['Fecha'].astype(str).str.strip(), format='ISO8601', errors='coerce')
     df['Fecha'] = fechas
     df = df.dropna(subset=['Fecha', 'Valor'])
     df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
@@ -307,7 +306,7 @@ def procesar_csvs_ideam(archivos):
     Retorna
     -------
     dict con claves: estacion, n_archivos, M_mm, anos_validos, region,
-                     nombre_region, datos, advertencia
+                    nombre_region, datos, advertencia
     """
     archivos = list(archivos)
     if not archivos:
@@ -343,27 +342,16 @@ def procesar_csvs_ideam(archivos):
 
     combinado = pd.concat(dfs, ignore_index=True)
 
-    # ── DEBUG ──────────────────────────────────────────────────────────────────
-    print("[DEBUG] Columnas:", list(combinado.columns))
-    print("[DEBUG] dtype Fecha:", combinado['Fecha'].dtype)
-    print("[DEBUG] Primeras 3 filas:\n", combinado[['Fecha', 'Valor']].head(3).to_string())
-    print("[DEBUG] Muestra Fecha (raw):", combinado['Fecha'].dropna().head(5).tolist())
+    # ── correcion de liennas debug──────────────────────────────────────────────────────────────────
+    combinado = pd.concat(dfs, ignore_index=True)
 
     fechas_parseadas = pd.to_datetime(combinado['Fecha'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-    n_coerce = fechas_parseadas.isna().sum()
-    if n_coerce == len(combinado):
+    if fechas_parseadas.isna().all():
         fechas_parseadas = pd.to_datetime(combinado['Fecha'], errors='coerce')
-        n_coerce2 = fechas_parseadas.isna().sum()
-        print(f"[DEBUG] Formato explícito falló para TODOS. Fallback inferido: {n_coerce2} NaT de {len(combinado)}")
-    else:
-        print(f"[DEBUG] Parseadas con formato explícito: {n_coerce} NaT de {len(combinado)}")
     combinado = combinado.copy()
     combinado['Fecha'] = fechas_parseadas
     combinado['Valor'] = pd.to_numeric(combinado['Valor'], errors='coerce')
     combinado_valido = combinado.dropna(subset=['Fecha', 'Valor'])
-    print(f"[DEBUG] Filas tras dropna(Fecha,Valor): {len(combinado_valido)} de {len(combinado)}")
-    anios_unicos = sorted(combinado_valido['Fecha'].dt.year.unique().tolist())
-    print(f"[DEBUG] Años únicos encontrados ({len(anios_unicos)}): {anios_unicos}")
     # ── FIN DEBUG ──────────────────────────────────────────────────────────────
 
     # ── Detección automática de región ────────────────────────────────────────
